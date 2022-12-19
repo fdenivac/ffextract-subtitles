@@ -75,7 +75,7 @@ def ffsubextract(file_path, subtitle_index, fileout_path):
         file_path,
         #  "-c",  "copy",  # <- problem
         "-map",
-        "0:s:{}".format(subtitle_index),
+        f"0:s:{subtitle_index}",
         fileout_path,
     ]
     try:
@@ -114,7 +114,7 @@ class ExtractSubtitles:
         # ffmpeg probe
         ffprobe_result = ffprobe(file_path=file_path)
         if ffprobe_result.return_code != 0:
-            print('Error probe file "{}"'.format(file_path))
+            print(f'Error probe file "{file_path}"')
             print("  ", ffprobe_result.error, file=sys.stderr)
             return
         ffprobe_json = json.loads(ffprobe_result.json)
@@ -128,7 +128,7 @@ class ExtractSubtitles:
             if stream.get("codec_type", "unknown") == "subtitle"
         ]
         if not streams and self.args.verbose > 1:
-            print('No subtitles for "{}"'.format(file_path))
+            print(f'No subtitles for "{file_path}"')
             return
         # examine streams
         for stream in streams:
@@ -140,7 +140,7 @@ class ExtractSubtitles:
                 print(f'{action} "{file_path}" for {len(streams)} subtitle(s)')
                 fname_printed = True
             if self.args.show_probe:
-                print("  ---> json subtitle {} :".format(index_subtitle + 1))
+                print(f"  ---> json subtitle {index_subtitle + 1} :")
                 lines = json.dumps(stream, indent=4).splitlines()
                 for line in lines:
                     print("  ", line)
@@ -154,16 +154,7 @@ class ExtractSubtitles:
             )  # found : 'Forced', 'forced', '... Forcé', ...
             if self.args.verbose > 1:
                 print(
-                    "  ---> subtitle {} : stream_id:{}  -  subtitle_id:{}  -  codec:{}  -  language:{}  -   forced:{} ({})  -  title:{}  ".format(
-                        index_subtitle + 1,
-                        index,
-                        index_subtitle,
-                        codec_name,
-                        language,
-                        forced,
-                        is_forced,
-                        title,
-                    )
+                    f"  ---> subtitle {index_subtitle + 1} : stream_id:{index}  -  subtitle_id:{index_subtitle}  -  codec:{codec_name}  -  language:{language}  -   forced:{forced} ({is_forced})  -  title:{title}  "
                 )
 
             if self.args.scan_only:
@@ -172,7 +163,7 @@ class ExtractSubtitles:
             # ignore unsupported codec
             if codec_name in self.unsupported_codec:
                 if self.args.verbose:
-                    print('  ! Ignore unsupported stream "{}"'.format(codec_name))
+                    print(f'  ! Ignore unsupported stream "{codec_name}"')
                 continue
 
             # ignore forced subtitles
@@ -186,7 +177,7 @@ class ExtractSubtitles:
             if language != "unset":
                 if language not in self.args.language.split(","):
                     if self.args.verbose:
-                        print('  ! Ignore language "{}"'.format(language))
+                        print(f'  ! Ignore language "{language}"')
                     continue
 
             # ignore subtitles SDH
@@ -201,23 +192,21 @@ class ExtractSubtitles:
         # extract subtitles
         for index_subtitle, language, is_forced in streams_to_extract:
             foutname, _ = os.path.splitext(file_path)
-
             if len(streams_to_extract) == 1:
-                final_name = "{}.srt".format(foutname)
+                final_name = f"{foutname}.srt"
             else:
-                final_name = "{}.{}.{}{}.srt".format(
-                    foutname, language, index_subtitle, ".forced" if is_forced else ""
-                )
+                sforced = ".forced" if is_forced else ""
+                final_name = f"{foutname}.{language}.{index_subtitle}{sforced}.srt"
             if self.args.verbose > 1:
                 print("  Subtitle filename : ", final_name)
             # never rewrite subtitles
             if os.path.exists(final_name):
                 if self.args.verbose:
-                    print("  ! Subtitles already exists ({})".format(final_name))
+                    print(f"  ! Subtitles already exists ({final_name})")
                 continue
             code, result = ffsubextract(file_path, index_subtitle, final_name)
             if code != 0:
-                print('  !!! ERROR code {} : "{}"'.format(code, result))
+                print(f'  !!! ERROR code {code} : "{result}"')
             else:
                 print("  extract done : ", final_name)
 
@@ -236,10 +225,14 @@ class ExtractSubtitles:
         """
         for glob_name in self.args.filelist:
             glob_name = glob_name.rstrip("\r\n")
+            if os.path.isdir(glob_name):
+                glob_name = os.path.join(glob_name, "*")
             for fname in glob.glob(glob_name):
                 if os.path.isfile(fname):
                     self.process_movie(None, fname)
                 elif os.path.isdir(fname):
+                    if not self.args.recursive:
+                        continue
                     for root, _, files in os.walk(fname):
                         for fname in files:
                             self.process_movie(root, fname)
@@ -275,6 +268,9 @@ def main():
     parser.add_argument(
         "--show-probe", action="store_true", help="print ffprobe json results"
     )
+    parser.add_argument(
+        "-r", "--recursive", action="store_true", help="process subdirectories"
+    )
     parser.add_argument("--scan-only", action="store_true", help="scan files and exit")
 
     args = parser.parse_args()
@@ -297,3 +293,5 @@ if __name__ == "__main__":
     except IOError as _e:
         if _e.errno not in [22, 32]:
             raise _e
+    except KeyboardInterrupt:
+        print("Keyboard Interruption", file=sys.stderr)
